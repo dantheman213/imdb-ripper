@@ -231,7 +231,7 @@ func exportToJSON(data map[string]*Movie) {
 		return
 	}
 
-	if err := ioutil.WriteFile("dataset.json", bytes, 0644); err != nil {
+	if err := ioutil.WriteFile("/output/dataset.json", bytes, 0644); err != nil {
 		log.Fatal(err)
 	}
 }
