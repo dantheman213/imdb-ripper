@@ -11,6 +11,7 @@ import (
 	"github.com/chromedp/chromedp"
 	"io/ioutil"
 	"log"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -33,7 +34,6 @@ var imdbCategoryKeywords []string = []string{
     "short",
     "war",
     "biography",
-    "crime",
     "family",
     "fantasy",
     "game-show",
@@ -59,10 +59,42 @@ type Movie struct {
 var Movies map[string]*Movie
 var count int = 0
 
+var loadedGenre string = ""
+var loadedStart string = ""
+var loadedFilePath string = ""
 func main() {
 	Movies = make(map[string]*Movie)
+
+	if len(os.Args) > 1 {
+		args := os.Args[1:]
+
+		if len(args) == 3 {
+			fmt.Printf("%v", args)
+			loadedGenre = args[0]
+			loadedStart = args[1]
+			loadedFilePath = args[2]
+
+			loadDataStructureIntoMemory(loadedFilePath)
+		} else {
+			panic("not enough args")
+		}
+	}
+
     ingestMoviesFromIMDB()
     fmt.Println("COMPLETE!")
+}
+
+func loadDataStructureIntoMemory(filePath string) {
+	bytes, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		panic(err)
+	}
+
+	if err := json.Unmarshal(bytes, &Movies); err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("File loaded with %d bytes in memory\n\n", len(bytes))
 }
 
 func generateIMDBURLForKeyword(keyword string, start int) string {
@@ -128,27 +160,58 @@ func getCategoryItemCount(keyword string) int {
 }
 
 func ingestMoviesFromIMDB() {
+	if loadedGenre != "" {
+		idx := -1
+
+		for k := 0; k < len(imdbCategoryKeywords); k++ {
+			if imdbCategoryKeywords[k] == loadedGenre {
+				idx = k
+			}
+		}
+
+		if idx > -1 {
+			imdbCategoryKeywords = imdbCategoryKeywords[idx:]
+			fmt.Printf("loaded genre %s", imdbCategoryKeywords[0])
+		} else {
+			panic("no genre loaded")
+		}
+	}
+
     for _, keyword := range imdbCategoryKeywords {
     	count = getCategoryItemCount(keyword)
+    	if count > 25000 {
+    		count = 25000
+		}
+
     	fmt.Printf("found %d items in category %s\n\n", count, keyword)
 
-        for start := 1; start < count; start += 50 {
+    	num := 1
+		if loadedGenre == keyword && loadedStart != "" {
+			var err error
+			num, err = strconv.Atoi(loadedStart)
+			if err != nil {
+				panic(err)
+			}
+		}
+        for start := num; start < count; start += 50 {
 			if start > 1 && ((start - 1) % 250 == 0) {
 				// status update
 				fmt.Printf("\n\n\n\ncategory %s items processed %d out of %d. %.2f%%\n\n\n\n", keyword, start, count, float64(start)/float64(count))
 				time.Sleep(time.Duration(1) * time.Second)
 			}
-			if start > 1 && ((start - 1) % 5000) == 0 {
+			if start > 1 && ((start - 1) % 1000) == 0 {
 				// save current data structure to disk
 				fmt.Printf("\n\nsaving memory to disk...\n\n")
+				//time.Sleep(time.Duration(5) * time.Second)
 				exportToJSON()
 			}
 
 			ingestMoviePage(keyword, start)
         }
-    }
 
-	exportToJSON()
+        // save after each keyword iteration finishes
+		exportToJSON()
+    }
 }
 
 func ingestMoviePage(keyword string, start int) {
@@ -197,7 +260,6 @@ func ingestMoviePage(keyword string, start int) {
 		if doc != nil {
 			// Find the media items
 			doc.Find(".lister-list .lister-item .lister-item-content").Each(func(i int, s *goquery.Selection) {
-				// For each item found, get the band and Title
 				title := strings.TrimSpace(s.Find(".lister-item-header a").Text())
 
 				year := strings.TrimSpace(s.Find(".lister-item-header span.lister-item-year").Text())
